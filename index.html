@@ -1,0 +1,336 @@
+<html>
+
+<head>
+    <style>
+        body {
+            background-color: lightgray;
+        }
+
+        #board {
+            width: 600px;
+            height: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            display: block;
+        }
+
+        #role,
+        #text {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 2em;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- The core Firebase JS SDK is always required and must be listed first -->
+    <script src="https://www.gstatic.com/firebasejs/8.8.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.8.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.8.0/firebase-database.js"></script>
+
+    <!-- TODO: Add SDKs for Firebase products that you want to use
+     https://firebase.google.com/docs/web/setup#available-libraries -->
+
+    <script>
+        // Your web app's Firebase configuration
+        var firebaseConfig = {
+            apiKey: "AIzaSyB2gObsHNCZrnwDBfEUuzAmJ1TVAYdYLIA",
+            authDomain: "chatthing-524ee.firebaseapp.com",
+            databaseURL: "https://chatthing-524ee.firebaseio.com",
+            projectId: "chatthing-524ee",
+
+            storageBucket: "chatthing-524ee.appspot.com",
+            messagingSenderId: "200700793878",
+            appId: "1:200700793878:web:f6297c47845754fd08d137"
+        };
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+    </script>
+
+    <span id="role"></span>
+    <canvas id="board"></canvas>
+    <span id="text"></span>
+
+    <script>
+        const COLOR_1 = "pink";
+        const COLOR_2 = "lightblue";
+
+        class Point {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+            toString() {
+                return `Point(${this.x},${this.y})`;
+            }
+            getKey() {
+                return this.x * 1000 + this.y;
+            }
+            static fromKey(k) {
+                return new Point((k / 1000) | 0, k % 1000);
+            }
+        }
+        function callHandler(handler, method, args) {
+            if (!handler) {
+                console.warn(`Handler not defined`);
+                return;
+            }
+
+            if (typeof (handler[method]) == 'function') {
+                console.log("Calling handler " + method + " with ", args)
+                handler[method].apply(null, args)
+                return;
+            }
+
+            console.warn(`No handler for ${method} registered in ${handler}`);
+
+        }
+        class Board {
+            constructor(eventHandler) {
+                this.handler = eventHandler;
+
+                this.text = document.getElementById("text");
+
+                this.canvas = document.getElementById("board");
+
+                this.canvas.width = 600;
+                this.canvas.height = 500;
+
+                this.size = 74;
+                this.gap = 8;
+
+                /** @type {CanvasRenderingContext2D} */
+                this.ctx = this.canvas.getContext("2d");
+                this.canvas.addEventListener('click', this.onclick.bind(this));
+                this.canvas.addEventListener('mousemove', this.onmove.bind(this));
+                console.log(this.canvas);
+                this.tiles = new Map();
+                this.hovering = null
+                this.selected_color = 0;
+
+
+                this.draw();
+            }
+
+            eventToPoint(evt) {
+                const rect = this.canvas.getBoundingClientRect()
+                return new Point(event.clientX - rect.left, event.clientY - rect.top);
+            }
+            onclick(evt) {
+                let cell = this.pointToCell(this.eventToPoint(evt));
+                if (cell == null) return;
+
+                if (cell.x == 6) {
+                    if (cell.y <= 1)
+                        this.selected_color = cell.y;
+                } else {
+                    callHandler(this.handler, 'boardClicked', [cell, this.selected_color]);
+                }
+                this.draw();
+            }
+
+            pointToCell(pt) {
+                let x = pt.x, y = pt.y;
+                x -= this.gap;
+                if (x % (this.gap + this.size) > this.size) return null;
+                x = Math.floor(x / (this.size + this.gap));
+
+                y -= this.gap;
+                if (y % (this.gap + this.size) > this.size) return null;
+                y = Math.floor(y / (this.size + this.gap));
+
+                return new Point(x, y);
+            }
+
+            onmove(evt) {
+
+                this.hovering = this.pointToCell(this.eventToPoint(evt))
+                this.draw();
+            }
+
+            draw() {
+                this.drawGrid()
+                this.drawHighlight()
+                this.drawTiles()
+            }
+            drawGrid() {
+
+                this.ctx.fillStyle = "white";
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                this.ctx.strokeStyle = "lightgray";
+                this.ctx.lineWidth = 2;
+
+                for (let x = 0; x < 6; x++)
+                    for (let y = 0; y < 6; y++) {
+                        this.ctx.strokeRect(
+                            // gap ___ gap ___ gap
+                            x * (this.gap + this.size) + this.gap,
+                            y * (this.gap + this.size) + this.gap,
+                            this.size, this.size);
+                    }
+
+            }
+            drawHighlight() {
+                if (!this.hovering)
+                    return
+                if (this.hovering.x == 6 && this.hovering.y > 1)
+                    return
+                if (this.hovering.x > 6)
+                    return
+
+                this.ctx.fillStyle = "lightyellow";
+                this.ctx.fillRect(
+                    // gap ___ gap ___ gap
+                    this.hovering.x * (this.gap + this.size) + this.gap + 1,
+                    this.hovering.y * (this.gap + this.size) + this.gap + 1,
+                    this.size - 2, this.size - 2);
+
+            }
+            drawTile(point, color, stroke) {
+                this.ctx.beginPath();
+                this.ctx.strokeStyle = "black";
+                this.ctx.fillStyle = color;
+
+                let x = point.x * (this.gap + this.size) + this.gap + this.size * .5;
+                let y = point.y * (this.gap + this.size) + this.gap + this.size * .5;
+                let r = this.size * .35;
+                this.ctx.moveTo(x + r, y);
+                this.ctx.arc(x, y, r, 0, 7);
+                this.ctx.fill()
+                if (stroke)
+                    this.ctx.stroke()
+            }
+            drawTiles() {
+
+                this.tiles.forEach((color, point) => {
+                    this.drawTile(Point.fromKey(point), [COLOR_1, COLOR_2][color]);
+                });
+                this.drawTile(new Point(6, 0), COLOR_1, this.selected_color == 0);
+                this.drawTile(new Point(6, 1), COLOR_2, this.selected_color == 1);
+
+            }
+            setTile(pt, color) {
+                if (this.tiles.has(pt.getKey())) return false;
+                this.tiles.set(pt.getKey(), color)
+                return true;
+            }
+            setTiles(tiles) {
+                this.tiles = new Map();
+                tiles.forEach(v => {
+                    this.setTile(Point.fromKey(v[0]), v[1])
+                })
+            }
+            getTiles() {
+                return Array.from(this.tiles.entries());
+            }
+
+            setYourTurn(turn) {
+                if (turn) this.text.innerText = "Your turn";
+                else this.text.innerText = "";
+            }
+            setRole(role) {
+                text = "";
+                switch (role) {
+                    case "order": text = "Order: Connect 5 of either color in a line. (Diagonals included)"; break;
+                    case "chaos": text = "Chaos: Prevent 5 of either color in a line. (Diagonals included)"; break;
+                }
+                document.getElementById("role").innerText = text;
+            }
+        }
+
+        class GameManager {
+            constructor(ref) {
+                this.user = firebase.auth().currentUser.uid;
+                this.ref = ref.child("meta")
+                this.pieces = ref.child("pieces")
+                this.board = new Board({ "boardClicked": this.boardClicked.bind(this) });
+                this.role = ""
+                this.game = {}
+            }
+
+            async boardClicked(pos, color) {
+                console.log("clicked ", this.game, this.role, pos, color);
+                if (this.game.turn != this.role) {
+                    console.log("Not your turn.")
+                    return;
+                }
+                if (!this.board.setTile(pos, color)) {
+                    console.log("Invalid choice");
+                    return;
+                }
+
+                this.pieces.set(this.board.getTiles())
+                this.game["turn"] = { "order": "chaos", "chaos": "order" }[this.game["turn"]]
+                this.ref.set(this.game)
+
+            }
+
+            async main() {
+                this.ref.on('value', this.game_updated.bind(this));
+                this.pieces.on('value', this.pieces_updated.bind(this))
+            }
+
+            async game_updated(snapshot) {
+                this.game = snapshot.val();
+
+                console.log("game_updated", this.game);
+
+
+                // Set player 1
+                if (this.game == null) {
+                    this.ref.set({ "chaos": this.user })
+                    return
+                }
+                // Set player 2
+                if (this.game["order"] == null && this.user != this.game["chaos"]) {
+                    this.game["order"] = this.user;
+                    this.game["turn"] = "order";
+                    this.ref.set(this.game);
+                    return;
+                }
+
+                let yourTurn = false;
+                if (this.game["turn"] == "order" && this.game["order"] == this.user) {
+                    yourTurn = true;
+                } else if (this.game["turn"] == "chaos" && this.game["chaos"] == this.user) {
+                    yourTurn = true;
+                }
+
+                this.board.setYourTurn(yourTurn);
+                if (this.game != null) {
+                    if (this.user == this.game['chaos']) this.role = "chaos"
+                    else if (this.user == this.game['order']) this.role = "order";
+                    else this.role = "viewer";
+                    this.board.setRole(this.role);
+                }
+
+            }
+
+            async pieces_updated(snapshot) {
+                this.board.setTiles(snapshot.val());
+                this.board.draw();
+            }
+        }
+
+
+        let GAME_ID = location.hash.substr(1);
+        if (!GAME_ID) location.hash = Math.random().toString(16).substr(2);
+        GAME_ID = location.hash.substr(1);
+
+        let user = null;
+        async function main(gameId) {
+            user = await firebase.auth().signInAnonymously()
+            console.log(user)
+            await new GameManager(firebase.database().ref("Games/").child(gameId)).main();
+        }
+        main(GAME_ID)
+            .then(console.log.bind(console))
+            .catch(console.error.bind(console));
+
+    </script>
+
+</body>
+
+</html>
